@@ -3,7 +3,10 @@ package oss
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	otserrors "github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/ots"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -220,9 +223,9 @@ type Backend struct {
 	*schema.Backend
 
 	// The fields below are set from configure
-	ossClient *oss.Client
-	otsClient *tablestore.TableStoreClient
-
+	ossClient            *oss.Client
+	otsClient            *tablestore.TableStoreClient
+	otsInstanceClient    *ots.Client
 	bucketName           string
 	statePrefix          string
 	stateKey             string
@@ -237,7 +240,6 @@ func (b *Backend) configure(ctx context.Context) error {
 	if b.ossClient != nil {
 		return nil
 	}
-
 	// Grab the resource data
 	d := schema.FromContextBackendConfig(ctx)
 
@@ -354,6 +356,10 @@ func (b *Backend) configure(ctx context.Context) error {
 	client, err := oss.New(endpoint, accessKey, secretKey, options...)
 	b.ossClient = client
 	otsEndpoint := d.Get("tablestore_endpoint").(string)
+	b.otsInstanceClient, err = ots.NewClientWithAccessKey(region, accessKey, secretKey)
+	if err != nil {
+		return err
+	}
 	if otsEndpoint != "" {
 		if !strings.HasPrefix(otsEndpoint, "http") {
 			otsEndpoint = fmt.Sprintf("%s://%s", schma, otsEndpoint)
@@ -363,8 +369,115 @@ func (b *Backend) configure(ctx context.Context) error {
 		b.otsClient = tablestore.NewClientWithConfig(otsEndpoint, parts[0], accessKey, secretKey, securityToken, tablestore.NewDefaultTableStoreConfig())
 	}
 	b.otsTable = d.Get("tablestore_table").(string)
+	//检查资源是否创建
+	if _, err := b.ossClient.GetBucketInfo(b.bucketName); err != nil {
+		if ossNotFoundError(err) {
+			if err := b.CreateOssBucket(); err != nil {
+				return fmt.Errorf("failed to create OSS bucket:%v", err)
+			}
+		} else {
+			return fmt.Errorf("failed getting OSS bucket: %v", err)
+		}
+	}
+	if b.otsEndpoint != "" {
+		instanceName := strings.TrimPrefix(strings.Split(b.otsEndpoint, ".")[0], "https://")
+		if _, err := b.DescribeOtsInstance(instanceName); err != nil {
+			if otsInstanceNotFoundError(err) {
+				if err := b.CreateOtsInstance(instanceName); err != nil {
+					return fmt.Errorf("failed to create OTS instance:%v", err)
+				}
+			} else {
+				return fmt.Errorf("failed getting OTS instance: %v", err)
+			}
 
+		}
+	}
+	if b.otsEndpoint != "" && b.otsTable != "" {
+		_, err := b.otsClient.DescribeTable(&tablestore.DescribeTableRequest{
+			TableName: b.otsTable,
+		})
+		if err != nil {
+			if strings.HasPrefix(err.Error(), "OTSObjectNotExist") {
+				if err := b.CreateOtsTable(); err != nil {
+					return fmt.Errorf("failed to create OTS table:%v", err)
+				}
+			} else {
+				return fmt.Errorf("failed getting OTS table: %v", err)
+			}
+		}
+	}
 	return err
+}
+
+func (b *Backend) DescribeOtsInstance(instanceName string) (ots.InstanceInfo, error) {
+	request := ots.CreateGetInstanceRequest()
+	request.InstanceName = instanceName
+	request.Method = "GET"
+	resp, err := b.otsInstanceClient.GetInstance(request)
+	return resp.InstanceInfo, err
+}
+func (b *Backend) CreateOtsInstance(instanceName string) error {
+	req := ots.CreateInsertInstanceRequest()
+	req.ClusterType = "HYBRID"
+	req.InstanceName = instanceName
+	req.Network = "NORMAL"
+	req.Description = "Terraform remote backend state lock"
+	_, err := b.otsInstanceClient.InsertInstance(req)
+	if err != nil {
+		return err
+	}
+	timeOut := 120
+	intervalShort := 5
+	deadline := time.Now().Add(time.Duration(120) * time.Second)
+
+	for {
+		object, err := b.DescribeOtsInstance(instanceName)
+		if err != nil {
+			return err
+		}
+		if object.Status == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			return errors.New(fmt.Sprintf("Resource %s timeout in %d seconds", instanceName, timeOut))
+		}
+		time.Sleep(time.Duration(intervalShort) * time.Second)
+	}
+	return err
+}
+func (b *Backend) CreateOtsTable() error {
+	tableMeta := new(tablestore.TableMeta)
+	tableMeta.TableName = b.otsTable
+	tableMeta.AddPrimaryKeyColumn(pkName, tablestore.PrimaryKeyType_STRING)
+
+	tableOption := new(tablestore.TableOption)
+	tableOption.TimeToAlive = -1
+	tableOption.MaxVersion = 1
+
+	reservedThroughput := new(tablestore.ReservedThroughput)
+
+	_, err := b.otsClient.CreateTable(&tablestore.CreateTableRequest{
+		TableMeta:          tableMeta,
+		TableOption:        tableOption,
+		ReservedThroughput: reservedThroughput,
+	})
+	return err
+}
+func (b *Backend) CreateOssBucket() error {
+	return b.ossClient.CreateBucket(b.bucketName)
+}
+func ossNotFoundError(err error) bool {
+	if e, ok := err.(oss.ServiceError); ok &&
+		(e.StatusCode == 404 || strings.HasPrefix(e.Code, "NoSuch") || strings.HasPrefix(e.Message, "The specified bucket does not exist")) {
+		return true
+	}
+	return false
+}
+func otsInstanceNotFoundError(err error) bool {
+	if e, ok := err.(*otserrors.ServerError); ok {
+		return e.ErrorCode() == "NotFound"
+	}
+	return false
 }
 
 func (b *Backend) getOSSEndpointByRegion(access_key, secret_key, security_token, region string) (*location.DescribeEndpointResponse, error) {

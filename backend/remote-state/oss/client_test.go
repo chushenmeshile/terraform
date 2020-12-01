@@ -34,7 +34,6 @@ func TestRemoteClient(t *testing.T) {
 		"encrypt": true,
 	})).(*Backend)
 
-	createOSSBucket(t, b.ossClient, bucketName)
 	defer deleteOSSBucket(t, b.ossClient, bucketName)
 
 	state, err := b.StateMgr(backend.DefaultStateName)
@@ -67,9 +66,7 @@ func TestRemoteClientLocks(t *testing.T) {
 		"tablestore_endpoint": RemoteTestUsedOTSEndpoint,
 	})).(*Backend)
 
-	createOSSBucket(t, b1.ossClient, bucketName)
 	defer deleteOSSBucket(t, b1.ossClient, bucketName)
-	createTablestoreTable(t, b1.otsClient, tableName)
 	defer deleteTablestoreTable(t, b1.otsClient, tableName)
 
 	s1, err := b1.StateMgr(backend.DefaultStateName)
@@ -108,9 +105,7 @@ func TestRemoteClientLocks_multipleStates(t *testing.T) {
 		"tablestore_endpoint": RemoteTestUsedOTSEndpoint,
 	})).(*Backend)
 
-	createOSSBucket(t, b1.ossClient, bucketName)
 	defer deleteOSSBucket(t, b1.ossClient, bucketName)
-	createTablestoreTable(t, b1.otsClient, tableName)
 	defer deleteTablestoreTable(t, b1.otsClient, tableName)
 
 	s1, err := b1.StateMgr("s1")
@@ -154,9 +149,7 @@ func TestRemoteForceUnlock(t *testing.T) {
 		"tablestore_endpoint": RemoteTestUsedOTSEndpoint,
 	})).(*Backend)
 
-	createOSSBucket(t, b1.ossClient, bucketName)
 	defer deleteOSSBucket(t, b1.ossClient, bucketName)
-	createTablestoreTable(t, b1.otsClient, tableName)
 	defer deleteTablestoreTable(t, b1.otsClient, tableName)
 
 	// first test with default
@@ -225,9 +218,7 @@ func TestRemoteClient_clientMD5(t *testing.T) {
 		"tablestore_endpoint": RemoteTestUsedOTSEndpoint,
 	})).(*Backend)
 
-	createOSSBucket(t, b.ossClient, bucketName)
 	defer deleteOSSBucket(t, b.ossClient, bucketName)
-	createTablestoreTable(t, b.otsClient, tableName)
 	defer deleteTablestoreTable(t, b.otsClient, tableName)
 
 	s, err := b.StateMgr(backend.DefaultStateName)
@@ -275,9 +266,7 @@ func TestRemoteClient_stateChecksum(t *testing.T) {
 		"tablestore_endpoint": RemoteTestUsedOTSEndpoint,
 	})).(*Backend)
 
-	createOSSBucket(t, b1.ossClient, bucketName)
 	defer deleteOSSBucket(t, b1.ossClient, bucketName)
-	createTablestoreTable(t, b1.otsClient, tableName)
 	defer deleteTablestoreTable(t, b1.otsClient, tableName)
 
 	s1, err := b1.StateMgr(backend.DefaultStateName)

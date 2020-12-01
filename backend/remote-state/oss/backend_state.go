@@ -14,8 +14,6 @@ import (
 
 	"log"
 	"path"
-
-	"github.com/aliyun/aliyun-tablestore-go-sdk/tablestore"
 )
 
 const (
@@ -38,15 +36,6 @@ func (b *Backend) remoteClient(name string) (*RemoteClient, error) {
 		otsTable:             b.otsTable,
 		otsClient:            b.otsClient,
 	}
-	if b.otsEndpoint != "" && b.otsTable != "" {
-		_, err := b.otsClient.DescribeTable(&tablestore.DescribeTableRequest{
-			TableName: b.otsTable,
-		})
-		if err != nil {
-			return client, fmt.Errorf("Error describing table store %s: %#v", b.otsTable, err)
-		}
-	}
-
 	return client, nil
 }
 

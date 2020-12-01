@@ -79,7 +79,6 @@ func TestBackendConfigWorkSpace(t *testing.T) {
 	}
 
 	b := backend.TestBackendConfig(t, New(), backend.TestWrapConfig(config)).(*Backend)
-	createOSSBucket(t, b.ossClient, "terraform-backend-oss-test")
 	defer deleteOSSBucket(t, b.ossClient, "terraform-backend-oss-test")
 	if _, err := b.Workspaces(); err != nil {
 		t.Fatal(err.Error())
@@ -173,19 +172,11 @@ func TestBackend(t *testing.T) {
 		"prefix": statePrefix,
 	})).(*Backend)
 
-	createOSSBucket(t, b1.ossClient, bucketName)
 	defer deleteOSSBucket(t, b1.ossClient, bucketName)
 
 	backend.TestBackendStates(t, b1)
 	backend.TestBackendStateLocks(t, b1, b2)
 	backend.TestBackendStateForceUnlock(t, b1, b2)
-}
-
-func createOSSBucket(t *testing.T, ossClient *oss.Client, bucketName string) {
-	// Be clear about what we're doing in case the user needs to clean this up later.
-	if err := ossClient.CreateBucket(bucketName); err != nil {
-		t.Fatal("failed to create test OSS bucket:", err)
-	}
 }
 
 func deleteOSSBucket(t *testing.T, ossClient *oss.Client, bucketName string) {
@@ -212,28 +203,6 @@ func deleteOSSBucket(t *testing.T, ossClient *oss.Client, bucketName string) {
 
 	if err := ossClient.DeleteBucket(bucketName); err != nil {
 		t.Logf(warning, err)
-	}
-}
-
-// create the tablestore table, and wait until we can query it.
-func createTablestoreTable(t *testing.T, otsClient *tablestore.TableStoreClient, tableName string) {
-	tableMeta := new(tablestore.TableMeta)
-	tableMeta.TableName = tableName
-	tableMeta.AddPrimaryKeyColumn(pkName, tablestore.PrimaryKeyType_STRING)
-
-	tableOption := new(tablestore.TableOption)
-	tableOption.TimeToAlive = -1
-	tableOption.MaxVersion = 1
-
-	reservedThroughput := new(tablestore.ReservedThroughput)
-
-	_, err := otsClient.CreateTable(&tablestore.CreateTableRequest{
-		TableMeta:          tableMeta,
-		TableOption:        tableOption,
-		ReservedThroughput: reservedThroughput,
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
